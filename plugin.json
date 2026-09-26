@@ -1,0 +1,9 @@
+{
+  "id": "stewrd-yt-dlp",
+  "name": "YT-DLP",
+  "icon": "default",
+  "entry": "dist/index.js",
+  "description": "Queue-based video/audio downloader UI backed by yt-dlp, with automatic install/update.",
+  "apiVersion": "1",
+  "background": true
+}

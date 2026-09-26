@@ -1,0 +1,31 @@
+# YT-DLP
+
+A Stewrd plugin that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp) in a simple queue-based download UI.
+
+## Features
+
+- Paste a URL, press Enter or "Add To Queue" - the download starts automatically (one at a time).
+- Live progress bar + ETA for the item currently downloading.
+- Automatically downloads and installs yt-dlp and FFmpeg on first run (asks for confirmation first), and checks for yt-dlp updates on startup.
+- Output folder is set directly in the plugin's pane.
+
+## Settings
+
+Most yt-dlp behavior is configured via **Settings > Plugins > Configure**, editing this plugin's `settings.json` directly. See the field-by-field notes in that file's comments-equivalent (the plan doc) for what each option maps to, but in short:
+
+- `format` / `audioOnly` / `audioFormat` - what to download.
+- `outputTemplate` - yt-dlp's `-o` filename template (the output *folder* itself is set from the plugin's UI, not here).
+- `embedThumbnail` / `embedMetadata` / `embedChapters` - post-processing polish (requires FFmpeg, installed automatically).
+- `subtitles.*` / `sponsorBlock.*` - optional extras, off by default.
+- `sleepBetweenDownloadsSeconds` / `cookiesFromBrowser` - the two main mitigations against YouTube's temporary rate-limiting/bans; both are on/available by default (a 3-second sleep) or can be set to use a real logged-in browser session.
+- `extraArgs` - escape hatch for any yt-dlp flag not modeled above.
+
+## Development
+
+```sh
+npm install
+npm run build   # bundles index.tsx -> dist/index.js
+npm test        # vitest
+```
+
+Run `build-release.bat` to deploy a built copy into a local Stewrd install's `plugins/` folder for manual testing.
