@@ -550,6 +550,13 @@ async function runProcessingLoop(api, ctx, myId, paths) {
       if (!isOwner(myId)) break;
       if (result.code === 0) {
         setQueue(removeFromQueue(queue, item.id));
+        safeLog(api, ctx, "info", `Downloaded: ${item.url}`);
+        if (!ctx.signal.aborted) {
+          try {
+            api.toast.show({ title: "Download Complete", message: item.url, kind: "success" });
+          } catch {
+          }
+        }
       } else {
         setQueue(updateItem(queue, item.id, { status: "error", error: lastError || `yt-dlp exited with code ${result.code}` }));
       }
