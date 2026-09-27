@@ -31,7 +31,7 @@ import {
   killProcessTree,
   type BinPaths,
 } from "./src/ytdlp";
-import { detectDefaultBrowser, openDefaultBrowserAtYouTube } from "./src/browserCookies";
+import { openDefaultBrowserAtYouTubeAndDetect } from "./src/browserCookies";
 
 // api.ui.TextBox is a <textarea> with a hardcoded `resize: vertical` inline
 // style and no prop to override it - a scoped CSS override (same
@@ -404,8 +404,7 @@ export function Component({ api }: { api: PluginApi }) {
   const useBrowserCookies = async () => {
     detectingBrowser = true;
     notify();
-    await openDefaultBrowserAtYouTube(api);
-    const browser = await detectDefaultBrowser(api);
+    const browser = await openDefaultBrowserAtYouTubeAndDetect(api);
     sessionCookiesBrowser = browser;
     detectingBrowser = false;
     notify();

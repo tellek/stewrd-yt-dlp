@@ -317,39 +317,39 @@ async function killProcessTree(api, pid) {
 }
 
 // src/browserCookies.ts
-var PROGID_PREFIXES = [
-  ["chromehtml", "chrome"],
-  ["msedgehtm", "edge"],
-  ["firefoxurl", "firefox"],
-  ["bravehtml", "brave"],
-  ["operastable", "opera"],
-  ["operagxstable", "opera"],
-  ["vivaldihtm", "vivaldi"]
-];
-function progIdToYtDlpBrowser(progId) {
-  const normalized = progId.trim().toLowerCase();
-  const match = PROGID_PREFIXES.find(([prefix]) => normalized.startsWith(prefix));
-  return match ? match[1] : null;
+var PROCESS_NAME_TO_YTDLP = {
+  chrome: "chrome",
+  msedge: "edge",
+  firefox: "firefox",
+  brave: "brave",
+  opera: "opera",
+  vivaldi: "vivaldi"
+};
+function processNameToYtDlpBrowser(processName) {
+  return PROCESS_NAME_TO_YTDLP[processName.trim().toLowerCase()] ?? null;
 }
-async function detectDefaultBrowser(api) {
+var BROWSER_PROCESS_NAMES = Object.keys(PROCESS_NAME_TO_YTDLP).join(",");
+async function openDefaultBrowserAtYouTubeAndDetect(api) {
+  await api.shell.exec("cmd", ["/c", "start", "", "https://www.youtube.com"]).catch(() => {
+  });
+  const script = [
+    // Give the OS a moment to actually switch focus to the launched browser
+    // before reading which window is in the foreground.
+    "Start-Sleep -Milliseconds 900",
+    `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class StewrdYtDlpWin32 { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid); }'`,
+    "$hwnd = [StewrdYtDlpWin32]::GetForegroundWindow()",
+    "$procId = 0",
+    "[StewrdYtDlpWin32]::GetWindowThreadProcessId($hwnd, [ref]$procId) | Out-Null",
+    "(Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName"
+  ].join("; ");
   try {
-    const result = await api.shell.exec("reg", [
-      "query",
-      "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice",
-      "/v",
-      "ProgId"
-    ]);
+    const result = await api.shell.exec("powershell", ["-NoProfile", "-Command", script]);
     if (result.code !== 0) return null;
-    const match = /ProgId\s+REG_SZ\s+(\S+)/.exec(result.stdout);
-    if (!match) return null;
-    return progIdToYtDlpBrowser(match[1]);
+    const name = result.stdout.trim().split(/\r?\n/)[0]?.trim();
+    return name ? processNameToYtDlpBrowser(name) : null;
   } catch {
     return null;
   }
-}
-async function openDefaultBrowserAtYouTube(api) {
-  await api.shell.exec("cmd", ["/c", "start", "", "https://www.youtube.com"]).catch(() => {
-  });
 }
 
 // index.tsx
@@ -636,8 +636,7 @@ function Component({ api }) {
   const useBrowserCookies = async () => {
     detectingBrowser = true;
     notify();
-    await openDefaultBrowserAtYouTube(api);
-    const browser = await detectDefaultBrowser(api);
+    const browser = await openDefaultBrowserAtYouTubeAndDetect(api);
     sessionCookiesBrowser = browser;
     detectingBrowser = false;
     notify();
