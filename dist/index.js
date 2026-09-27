@@ -697,12 +697,12 @@ function Component({ api }) {
             paddingBottom: 4
           },
           children: [
-            detectingBrowser ? /* @__PURE__ */ jsx(api.ui.Spinner, { size: 20 }) : /* @__PURE__ */ jsx(
+            detectingBrowser ? /* @__PURE__ */ jsx(api.ui.Spinner, { size: 40 }) : /* @__PURE__ */ jsx(
               api.ui.MaskIcon,
               {
                 png: anonymous_default,
                 alt: "Anonymous",
-                size: 20,
+                size: 40,
                 color: sessionCookiesBrowser ? palette.status.success : palette.status["in-progress"]
               }
             ),

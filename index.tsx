@@ -468,12 +468,12 @@ export function Component({ api }: { api: PluginApi }) {
           }}
         >
           {detectingBrowser ? (
-            <api.ui.Spinner size={20} />
+            <api.ui.Spinner size={40} />
           ) : (
             <api.ui.MaskIcon
               png={anonymousIcon}
               alt="Anonymous"
-              size={20}
+              size={40}
               color={sessionCookiesBrowser ? palette.status.success : palette.status["in-progress"]}
             />
           )}
