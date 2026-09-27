@@ -71,7 +71,12 @@ function isOwner(myId: string): boolean {
 }
 
 async function loadState(api: PluginApi): Promise<PersistedState> {
+  // Checked via listDir first (not just try/catch around readTextFile) so a
+  // brand-new install's expected "file doesn't exist yet" case doesn't log
+  // a host-side file-read error on every first run.
   try {
+    const entries = await api.fs.listDir();
+    if (!entries.some((e) => !e.isDir && e.name === STATE_FILE)) return { queue: [], outputDirectory: "" };
     const raw = await api.fs.readTextFile(STATE_FILE);
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     return { queue: Array.isArray(parsed.queue) ? parsed.queue : [], outputDirectory: parsed.outputDirectory ?? "" };

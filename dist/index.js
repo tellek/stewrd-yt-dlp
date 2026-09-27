@@ -302,6 +302,8 @@ function isOwner(myId) {
 }
 async function loadState(api) {
   try {
+    const entries = await api.fs.listDir();
+    if (!entries.some((e) => !e.isDir && e.name === STATE_FILE)) return { queue: [], outputDirectory: "" };
     const raw = await api.fs.readTextFile(STATE_FILE);
     const parsed = JSON.parse(raw);
     return { queue: Array.isArray(parsed.queue) ? parsed.queue : [], outputDirectory: parsed.outputDirectory ?? "" };
