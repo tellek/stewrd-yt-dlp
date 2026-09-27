@@ -41,6 +41,21 @@ export function resetInterruptedItems(queue: QueueItem[]): QueueItem[] {
   );
 }
 
+// Moves the item with `sourceId` to just before the item with `targetId`
+// (drag-and-drop reorder). No-op if either id is missing or they're the
+// same item.
+export function reorderQueue(queue: QueueItem[], sourceId: string, targetId: string): QueueItem[] {
+  if (sourceId === targetId) return queue;
+  const source = queue.find((item) => item.id === sourceId);
+  if (!source) return queue;
+  const withoutSource = queue.filter((item) => item.id !== sourceId);
+  const targetIndex = withoutSource.findIndex((item) => item.id === targetId);
+  if (targetIndex === -1) return queue;
+  const result = [...withoutSource];
+  result.splice(targetIndex, 0, source);
+  return result;
+}
+
 export function nextQueuedItem(queue: QueueItem[]): QueueItem | undefined {
   return queue.find((item) => item.status === "queued");
 }

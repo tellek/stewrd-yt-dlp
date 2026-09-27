@@ -4,6 +4,7 @@ import {
   removeFromQueue,
   resetInterruptedItems,
   nextQueuedItem,
+  reorderQueue,
   splitLines,
   parseDownloadProgressLine,
   ProgressTracker,
@@ -50,6 +51,28 @@ describe("resetInterruptedItems / nextQueuedItem", () => {
     queue = addToQueue(queue, "b");
     queue = queue.map((i, idx) => (idx === 0 ? { ...i, status: "done" as const } : i));
     expect(nextQueuedItem(queue)?.url).toBe("b");
+  });
+});
+
+describe("reorderQueue", () => {
+  it("moves the source item to just before the target item", () => {
+    let queue = addToQueue([], "a");
+    queue = addToQueue(queue, "b");
+    queue = addToQueue(queue, "c");
+    const reordered = reorderQueue(queue, queue[2].id, queue[0].id);
+    expect(reordered.map((i) => i.url)).toEqual(["c", "a", "b"]);
+  });
+
+  it("is a no-op when source and target are the same item", () => {
+    let queue = addToQueue([], "a");
+    queue = addToQueue(queue, "b");
+    expect(reorderQueue(queue, queue[0].id, queue[0].id)).toEqual(queue);
+  });
+
+  it("is a no-op when either id is unknown", () => {
+    const queue = addToQueue([], "a");
+    expect(reorderQueue(queue, "missing", queue[0].id)).toEqual(queue);
+    expect(reorderQueue(queue, queue[0].id, "missing")).toEqual(queue);
   });
 });
 

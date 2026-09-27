@@ -7,6 +7,7 @@ import {
   removeFromQueue,
   resetInterruptedItems,
   nextQueuedItem,
+  reorderQueue,
   updateItem,
   splitLines,
   parseDownloadProgressLine,
@@ -67,6 +68,14 @@ let processing = false;
 let installing = false;
 let activeChild: { pid: number } | null = null;
 
+// Captured once in activate() so UI-driven actions (add/remove/reorder from
+// Component) can persist state and (re)kick the processing loop themselves,
+// not just the code paths that already had a ctx/api in scope.
+let hostApi: PluginApi | null = null;
+let hostCtx: PluginContext | null = null;
+let hostPaths: BinPaths | null = null;
+let hostOwnerId = "";
+
 const listeners = new Set<() => void>();
 function notify() {
   listeners.forEach((fn) => fn());
@@ -121,6 +130,17 @@ async function defaultDownloadsDir(api: PluginApi): Promise<string> {
 function setQueue(next: QueueItem[]) {
   queue = next;
   notify();
+}
+
+// Fire-and-forget persistence + processing-loop kick for any UI-driven queue
+// mutation (add/remove/reorder) - the loop only drives itself forward while
+// it's already running, so adding to an empty/exhausted queue needs an
+// explicit restart, and every mutation needs to reach queue-state.json or
+// it's lost the next time the app restarts.
+function persistAndKick() {
+  if (!hostApi || !hostCtx || !hostPaths || !hostOwnerId) return;
+  saveState(hostApi, hostOwnerId);
+  if (!processing) runProcessingLoop(hostApi, hostCtx, hostOwnerId, hostPaths);
 }
 
 function setBanner(next: typeof banner) {
@@ -288,6 +308,11 @@ export async function activate(ctx: PluginContext) {
   const paths = resolveBinPaths(rootPath);
   archivePath = `${rootPath.replace(/[\\/]+$/, "")}\\download-archive.txt`;
 
+  hostApi = ctx.api;
+  hostCtx = ctx;
+  hostPaths = paths;
+  hostOwnerId = myId;
+
   const persisted = await loadState(ctx.api);
   queue = resetInterruptedItems(persisted.queue);
   outputDirectory = persisted.outputDirectory || (await defaultDownloadsDir(ctx.api));
@@ -345,6 +370,7 @@ export function Component({ api }: { api: PluginApi }) {
   const submitUrl = () => {
     if (!url.trim()) return;
     setQueue(addToQueue(queue, url.trim()));
+    persistAndKick();
     setUrl("");
   };
 
@@ -430,10 +456,40 @@ export function Component({ api }: { api: PluginApi }) {
           <div style={{ color: palette.textMuted }}>{ytdlpAvailable ? "Queue Is Empty" : "Preparing YT-DLP..."}</div>
         )}
         {queue.map((item) => (
-          <div key={item.id} style={{ padding: "8px 0", borderBottom: `1px solid ${palette.border}` }}>
+          <div
+            key={item.id}
+            draggable={item.status === "queued"}
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", item.id);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(e) => {
+              if (item.status !== "queued") return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const sourceId = e.dataTransfer.getData("text/plain");
+              if (!sourceId || sourceId === item.id) return;
+              setQueue(reorderQueue(queue, sourceId, item.id));
+              persistAndKick();
+            }}
+            style={{
+              padding: "8px 0",
+              borderBottom: `1px solid ${palette.border}`,
+              cursor: item.status === "queued" ? "grab" : "default",
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.url}</span>
-              <api.ui.IconButton label="Remove" onClick={() => setQueue(removeFromQueue(queue, item.id))} />
+              <api.ui.IconButton
+                label="Remove"
+                onClick={() => {
+                  setQueue(removeFromQueue(queue, item.id));
+                  persistAndKick();
+                }}
+              />
             </div>
             {item.status === "downloading" && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>

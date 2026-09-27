@@ -76,6 +76,17 @@ function resetInterruptedItems(queue2) {
     (item) => item.status === "downloading" ? { ...item, status: "queued", progress: 0, etaSeconds: null } : item
   );
 }
+function reorderQueue(queue2, sourceId, targetId) {
+  if (sourceId === targetId) return queue2;
+  const source = queue2.find((item) => item.id === sourceId);
+  if (!source) return queue2;
+  const withoutSource = queue2.filter((item) => item.id !== sourceId);
+  const targetIndex = withoutSource.findIndex((item) => item.id === targetId);
+  if (targetIndex === -1) return queue2;
+  const result = [...withoutSource];
+  result.splice(targetIndex, 0, source);
+  return result;
+}
 function nextQueuedItem(queue2) {
   return queue2.find((item) => item.status === "queued");
 }
@@ -302,6 +313,10 @@ var ffmpegAvailable = false;
 var processing = false;
 var installing = false;
 var activeChild = null;
+var hostApi = null;
+var hostCtx = null;
+var hostPaths = null;
+var hostOwnerId = "";
 var listeners = /* @__PURE__ */ new Set();
 function notify() {
   listeners.forEach((fn) => fn());
@@ -338,6 +353,11 @@ async function defaultDownloadsDir(api) {
 function setQueue(next) {
   queue = next;
   notify();
+}
+function persistAndKick() {
+  if (!hostApi || !hostCtx || !hostPaths || !hostOwnerId) return;
+  saveState(hostApi, hostOwnerId);
+  if (!processing) runProcessingLoop(hostApi, hostCtx, hostOwnerId, hostPaths);
 }
 function setBanner(next) {
   banner = next;
@@ -480,6 +500,10 @@ async function activate(ctx) {
   const rootPath = await ctx.api.fs.getRootPath();
   const paths = resolveBinPaths(rootPath);
   archivePath = `${rootPath.replace(/[\\/]+$/, "")}\\download-archive.txt`;
+  hostApi = ctx.api;
+  hostCtx = ctx;
+  hostPaths = paths;
+  hostOwnerId = myId;
   const persisted = await loadState(ctx.api);
   queue = resetInterruptedItems(persisted.queue);
   outputDirectory = persisted.outputDirectory || await defaultDownloadsDir(ctx.api);
@@ -528,6 +552,7 @@ function Component({ api }) {
   const submitUrl = () => {
     if (!url.trim()) return;
     setQueue(addToQueue(queue, url.trim()));
+    persistAndKick();
     setUrl("");
   };
   const changeFolder = (value) => {
@@ -605,18 +630,55 @@ function Component({ api }) {
         },
         children: [
           queue.length === 0 && /* @__PURE__ */ jsx("div", { style: { color: palette.textMuted }, children: ytdlpAvailable ? "Queue Is Empty" : "Preparing YT-DLP..." }),
-          queue.map((item) => /* @__PURE__ */ jsxs("div", { style: { padding: "8px 0", borderBottom: `1px solid ${palette.border}` }, children: [
-            /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", gap: 8 }, children: [
-              /* @__PURE__ */ jsx("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: item.url }),
-              /* @__PURE__ */ jsx(api.ui.IconButton, { label: "Remove", onClick: () => setQueue(removeFromQueue(queue, item.id)) })
-            ] }),
-            item.status === "downloading" && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 }, children: [
-              /* @__PURE__ */ jsx(api.ui.Spinner, { size: 14 }),
-              /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(api.ui.ProgressBar, { value: item.progress }) }),
-              /* @__PURE__ */ jsx("span", { style: { color: palette.textMuted, fontSize: 12 }, children: item.etaSeconds != null ? `ETA ${formatEta(item.etaSeconds)}` : "" })
-            ] }),
-            item.status === "error" && /* @__PURE__ */ jsx(api.ui.Banner, { message: item.error ?? "Download Failed", tone: "error" })
-          ] }, item.id))
+          queue.map((item) => /* @__PURE__ */ jsxs(
+            "div",
+            {
+              draggable: item.status === "queued",
+              onDragStart: (e) => {
+                e.dataTransfer.setData("text/plain", item.id);
+                e.dataTransfer.effectAllowed = "move";
+              },
+              onDragOver: (e) => {
+                if (item.status !== "queued") return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+              },
+              onDrop: (e) => {
+                e.preventDefault();
+                const sourceId = e.dataTransfer.getData("text/plain");
+                if (!sourceId || sourceId === item.id) return;
+                setQueue(reorderQueue(queue, sourceId, item.id));
+                persistAndKick();
+              },
+              style: {
+                padding: "8px 0",
+                borderBottom: `1px solid ${palette.border}`,
+                cursor: item.status === "queued" ? "grab" : "default"
+              },
+              children: [
+                /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", gap: 8 }, children: [
+                  /* @__PURE__ */ jsx("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: item.url }),
+                  /* @__PURE__ */ jsx(
+                    api.ui.IconButton,
+                    {
+                      label: "Remove",
+                      onClick: () => {
+                        setQueue(removeFromQueue(queue, item.id));
+                        persistAndKick();
+                      }
+                    }
+                  )
+                ] }),
+                item.status === "downloading" && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 }, children: [
+                  /* @__PURE__ */ jsx(api.ui.Spinner, { size: 14 }),
+                  /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(api.ui.ProgressBar, { value: item.progress }) }),
+                  /* @__PURE__ */ jsx("span", { style: { color: palette.textMuted, fontSize: 12 }, children: item.etaSeconds != null ? `ETA ${formatEta(item.etaSeconds)}` : "" })
+                ] }),
+                item.status === "error" && /* @__PURE__ */ jsx(api.ui.Banner, { message: item.error ?? "Download Failed", tone: "error" })
+              ]
+            },
+            item.id
+          ))
         ]
       }
     )
