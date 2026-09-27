@@ -403,6 +403,13 @@ export function Component({ api }: { api: PluginApi }) {
   };
 
   const useBrowserCookies = async () => {
+    if (sessionCookiesBrowser) {
+      sessionCookiesBrowser = null;
+      notify();
+      api.toast.show({ message: "Downloading anonymously again", kind: "idle" });
+      return;
+    }
+
     detectingBrowser = true;
     notify();
     const browser = await openDefaultBrowserAtYouTubeAndDetect(api);
