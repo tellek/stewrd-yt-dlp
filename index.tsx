@@ -32,6 +32,7 @@ import {
   type BinPaths,
 } from "./src/ytdlp";
 import { openDefaultBrowserAtYouTubeAndDetect } from "./src/browserCookies";
+import anonymousIcon from "./icons/anonymous.png";
 
 // api.ui.TextBox is a <textarea> with a hardcoded `resize: vertical` inline
 // style and no prop to override it - a scoped CSS override (same
@@ -448,22 +449,38 @@ export function Component({ api }: { api: PluginApi }) {
         <api.ui.TextBox value={folder} onChange={changeFolder} rows={1} placeholder="C:\Users\you\Downloads" />
       </div>
 
-      <div>
-        <div style={{ marginBottom: 4, color: palette.textMuted }}>Format</div>
-        <api.ui.Dropdown options={FORMAT_PRESETS} value={format} onChange={changeFormat} />
-      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ marginBottom: 4, color: palette.textMuted }}>Format</div>
+          <api.ui.Dropdown options={FORMAT_PRESETS} value={format} onChange={changeFormat} />
+        </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <api.ui.TextButton
-          label={detectingBrowser ? "Detecting Browser..." : "Use Browser Cookies"}
-          onClick={useBrowserCookies}
-          disabled={detectingBrowser}
-        />
-        {sessionCookiesBrowser && (
-          <span style={{ color: palette.textMuted, fontSize: 12 }}>
-            Using {sessionCookiesBrowser} Cookies This Session
+        <div
+          onClick={detectingBrowser ? undefined : useBrowserCookies}
+          title="Click To Stop Downloading Anonymously And Use Your Browser Cookies"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+            cursor: detectingBrowser ? "default" : "pointer",
+            paddingBottom: 4,
+          }}
+        >
+          {detectingBrowser ? (
+            <api.ui.Spinner size={20} />
+          ) : (
+            <api.ui.MaskIcon
+              png={anonymousIcon}
+              alt="Anonymous"
+              size={20}
+              color={sessionCookiesBrowser ? palette.status.success : palette.status["in-progress"]}
+            />
+          )}
+          <span style={{ fontSize: 11, color: palette.textMuted }}>
+            {sessionCookiesBrowser ?? "Anon"}
           </span>
-        )}
+        </div>
       </div>
 
       <div
