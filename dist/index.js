@@ -28,7 +28,6 @@ var DEFAULT_SETTINGS = {
   retries: 10,
   sleepIntervalMinSeconds: 5,
   sleepIntervalMaxSeconds: 25,
-  cookiesFromBrowser: "",
   proxy: "",
   extraArgs: [],
   autoUpdateCheckOnStartup: true
@@ -188,8 +187,8 @@ function buildArgs(settings, opts) {
       args.push("--max-sleep-interval", String(settings.sleepIntervalMaxSeconds));
     }
   }
-  if (settings.cookiesFromBrowser.trim()) {
-    args.push("--cookies-from-browser", settings.cookiesFromBrowser.trim());
+  if (opts.cookiesFromBrowser?.trim()) {
+    args.push("--cookies-from-browser", opts.cookiesFromBrowser.trim());
   }
   if (settings.proxy.trim()) args.push("--proxy", settings.proxy.trim());
   args.push(...settings.extraArgs);
@@ -317,6 +316,42 @@ async function killProcessTree(api, pid) {
   });
 }
 
+// src/browserCookies.ts
+var PROGID_PREFIXES = [
+  ["chromehtml", "chrome"],
+  ["msedgehtm", "edge"],
+  ["firefoxurl", "firefox"],
+  ["bravehtml", "brave"],
+  ["operastable", "opera"],
+  ["operagxstable", "opera"],
+  ["vivaldihtm", "vivaldi"]
+];
+function progIdToYtDlpBrowser(progId) {
+  const normalized = progId.trim().toLowerCase();
+  const match = PROGID_PREFIXES.find(([prefix]) => normalized.startsWith(prefix));
+  return match ? match[1] : null;
+}
+async function detectDefaultBrowser(api) {
+  try {
+    const result = await api.shell.exec("reg", [
+      "query",
+      "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice",
+      "/v",
+      "ProgId"
+    ]);
+    if (result.code !== 0) return null;
+    const match = /ProgId\s+REG_SZ\s+(\S+)/.exec(result.stdout);
+    if (!match) return null;
+    return progIdToYtDlpBrowser(match[1]);
+  } catch {
+    return null;
+  }
+}
+async function openDefaultBrowserAtYouTube(api) {
+  await api.shell.exec("cmd", ["/c", "start", "", "https://www.youtube.com"]).catch(() => {
+  });
+}
+
 // index.tsx
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 var NO_RESIZE_CLASS = "stewrd-yt-dlp-no-resize";
@@ -338,6 +373,8 @@ var ffmpegAvailable = false;
 var processing = false;
 var installing = false;
 var activeChild = null;
+var sessionCookiesBrowser = null;
+var detectingBrowser = false;
 var hostApi = null;
 var hostCtx = null;
 var hostPaths = null;
@@ -473,7 +510,8 @@ async function runProcessingLoop(api, ctx, myId, paths) {
         binDir: paths.binDir,
         outputDirectory,
         archivePath,
-        url: item.url
+        url: item.url,
+        cookiesFromBrowser: sessionCookiesBrowser
       });
       let stdoutCarry = "";
       let stderrCarry = "";
@@ -595,6 +633,20 @@ function Component({ api }) {
       currentSettings = { ...currentSettings, audioOnly: false, format: value };
     }
   };
+  const useBrowserCookies = async () => {
+    detectingBrowser = true;
+    notify();
+    await openDefaultBrowserAtYouTube(api);
+    const browser = await detectDefaultBrowser(api);
+    sessionCookiesBrowser = browser;
+    detectingBrowser = false;
+    notify();
+    if (browser) {
+      api.toast.show({ message: `Using ${browser} cookies for this session`, kind: "success" });
+    } else {
+      api.toast.show({ message: "Could not detect your default browser", kind: "warning" });
+    }
+  };
   return /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0 }, children: [
     installing && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx(api.ui.Blanket, {}),
@@ -627,6 +679,21 @@ function Component({ api }) {
     /* @__PURE__ */ jsxs("div", { children: [
       /* @__PURE__ */ jsx("div", { style: { marginBottom: 4, color: palette.textMuted }, children: "Format" }),
       /* @__PURE__ */ jsx(api.ui.Dropdown, { options: FORMAT_PRESETS, value: format, onChange: changeFormat })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+      /* @__PURE__ */ jsx(
+        api.ui.TextButton,
+        {
+          label: detectingBrowser ? "Detecting Browser..." : "Use Browser Cookies",
+          onClick: useBrowserCookies,
+          disabled: detectingBrowser
+        }
+      ),
+      sessionCookiesBrowser && /* @__PURE__ */ jsxs("span", { style: { color: palette.textMuted, fontSize: 12 }, children: [
+        "Using ",
+        sessionCookiesBrowser,
+        " Cookies This Session"
+      ] })
     ] }),
     /* @__PURE__ */ jsxs(
       "div",

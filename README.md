@@ -17,7 +17,8 @@ Most yt-dlp behavior is configured via **Settings > Plugins > Configure**, editi
 - `outputTemplate` - yt-dlp's `-o` filename template (the output *folder* itself is set from the plugin's UI, not here).
 - `embedThumbnail` / `embedMetadata` / `embedChapters` - post-processing polish (requires FFmpeg, installed automatically).
 - `subtitles.*` / `sponsorBlock.*` - optional extras, off by default.
-- `sleepIntervalMinSeconds` / `sleepIntervalMaxSeconds` / `cookiesFromBrowser` - the main mitigations against YouTube's temporary rate-limiting/bans. By default each download waits a randomized 5-25 seconds (`--sleep-interval`/`--max-sleep-interval`) so requests don't look like a bot burst; `cookiesFromBrowser` can additionally be set to use a real logged-in browser session. Set both sleep values to `0` to disable.
+- `sleepIntervalMinSeconds` / `sleepIntervalMaxSeconds` - the main mitigation against YouTube's temporary rate-limiting/bans. By default each download waits a randomized 5-25 seconds (`--sleep-interval`/`--max-sleep-interval`) so requests don't look like a bot burst. Set both to `0` to disable.
+- **Use Browser Cookies** button (in the plugin's UI, not settings.json) - opens your default browser to YouTube (so you can confirm you're logged in), detects which browser that was, and uses its cookies for every download for the rest of the current session. This is session-only by design (never written to settings.json or disk) - it resets on every app restart, so you'll need to press it again next time you want it.
 - `extraArgs` - escape hatch for any yt-dlp flag not modeled above.
 
 ## Development

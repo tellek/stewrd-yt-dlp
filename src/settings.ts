@@ -32,7 +32,6 @@ export interface YtDlpSettings {
   retries: number;
   sleepIntervalMinSeconds: number;
   sleepIntervalMaxSeconds: number;
-  cookiesFromBrowser: string;
   proxy: string;
   extraArgs: string[];
   autoUpdateCheckOnStartup: boolean;
@@ -64,7 +63,6 @@ export const DEFAULT_SETTINGS: YtDlpSettings = {
   retries: 10,
   sleepIntervalMinSeconds: 5,
   sleepIntervalMaxSeconds: 25,
-  cookiesFromBrowser: "",
   proxy: "",
   extraArgs: [],
   autoUpdateCheckOnStartup: true,

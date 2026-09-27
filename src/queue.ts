@@ -163,6 +163,9 @@ export interface BuildArgsOptions {
   outputDirectory: string;
   archivePath: string;
   url: string;
+  // Session-only, detected via the "Use Browser Cookies" button - never
+  // persisted to settings.json (see src/browserCookies.ts).
+  cookiesFromBrowser?: string | null;
 }
 
 // Assembles the full yt-dlp argument list for one queue item from settings.
@@ -215,8 +218,8 @@ export function buildArgs(settings: YtDlpSettings, opts: BuildArgsOptions): stri
       args.push("--max-sleep-interval", String(settings.sleepIntervalMaxSeconds));
     }
   }
-  if (settings.cookiesFromBrowser.trim()) {
-    args.push("--cookies-from-browser", settings.cookiesFromBrowser.trim());
+  if (opts.cookiesFromBrowser?.trim()) {
+    args.push("--cookies-from-browser", opts.cookiesFromBrowser.trim());
   }
   if (settings.proxy.trim()) args.push("--proxy", settings.proxy.trim());
 

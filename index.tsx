@@ -31,6 +31,7 @@ import {
   killProcessTree,
   type BinPaths,
 } from "./src/ytdlp";
+import { detectDefaultBrowser, openDefaultBrowserAtYouTube } from "./src/browserCookies";
 
 // api.ui.TextBox is a <textarea> with a hardcoded `resize: vertical` inline
 // style and no prop to override it - a scoped CSS override (same
@@ -69,6 +70,12 @@ let ffmpegAvailable = false;
 let processing = false;
 let installing = false;
 let activeChild: { pid: number } | null = null;
+
+// Set only via the "Use Browser Cookies" button, never persisted to disk -
+// resets to null on every app restart, matching "for the rest of this
+// session" rather than a settings.json preference.
+let sessionCookiesBrowser: string | null = null;
+let detectingBrowser = false;
 
 // Captured once in activate() so UI-driven actions (add/remove/reorder from
 // Component) can persist state and (re)kick the processing loop themselves,
@@ -250,6 +257,7 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
         outputDirectory,
         archivePath,
         url: item.url,
+        cookiesFromBrowser: sessionCookiesBrowser,
       });
 
       let stdoutCarry = "";
@@ -393,6 +401,21 @@ export function Component({ api }: { api: PluginApi }) {
     }
   };
 
+  const useBrowserCookies = async () => {
+    detectingBrowser = true;
+    notify();
+    await openDefaultBrowserAtYouTube(api);
+    const browser = await detectDefaultBrowser(api);
+    sessionCookiesBrowser = browser;
+    detectingBrowser = false;
+    notify();
+    if (browser) {
+      api.toast.show({ message: `Using ${browser} cookies for this session`, kind: "success" });
+    } else {
+      api.toast.show({ message: "Could not detect your default browser", kind: "warning" });
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0 }}>
       {installing && (
@@ -429,6 +452,19 @@ export function Component({ api }: { api: PluginApi }) {
       <div>
         <div style={{ marginBottom: 4, color: palette.textMuted }}>Format</div>
         <api.ui.Dropdown options={FORMAT_PRESETS} value={format} onChange={changeFormat} />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <api.ui.TextButton
+          label={detectingBrowser ? "Detecting Browser..." : "Use Browser Cookies"}
+          onClick={useBrowserCookies}
+          disabled={detectingBrowser}
+        />
+        {sessionCookiesBrowser && (
+          <span style={{ color: palette.textMuted, fontSize: 12 }}>
+            Using {sessionCookiesBrowser} Cookies This Session
+          </span>
+        )}
       </div>
 
       <div

@@ -195,6 +195,14 @@ describe("buildArgs", () => {
     expect(args).not.toContain("--download-archive");
   });
 
+  it("adds --cookies-from-browser only when opts.cookiesFromBrowser is set (session-only, not a setting)", () => {
+    const withCookies = buildArgs(DEFAULT_SETTINGS, { ...opts, cookiesFromBrowser: "chrome" });
+    expect(withCookies).toEqual(expect.arrayContaining(["--cookies-from-browser", "chrome"]));
+
+    const withoutCookies = buildArgs(DEFAULT_SETTINGS, { ...opts, cookiesFromBrowser: null });
+    expect(withoutCookies).not.toContain("--cookies-from-browser");
+  });
+
   it("adds --sleep-interval/--max-sleep-interval as a randomized range by default", () => {
     const args = buildArgs(DEFAULT_SETTINGS, opts);
     expect(args).toEqual(expect.arrayContaining(["--sleep-interval", "5"]));

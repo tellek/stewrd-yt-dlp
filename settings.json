@@ -32,7 +32,6 @@
   "retries": 10,
   "sleepIntervalMinSeconds": 5,
   "sleepIntervalMaxSeconds": 25,
-  "cookiesFromBrowser": "",
   "proxy": "",
 
   "extraArgs": [],
