@@ -49,6 +49,7 @@ let banner: { tone: "warning" | "error" | "success"; message: string } | null = 
 let ytdlpAvailable = false;
 let ffmpegAvailable = false;
 let processing = false;
+let installing = false;
 let activeChild: { pid: number } | null = null;
 
 const listeners = new Set<() => void>();
@@ -146,6 +147,8 @@ async function ensureBinariesInstalled(api: PluginApi, ctx: PluginContext, myId:
   });
   if (!confirmed || !isOwner(myId)) return false;
 
+  installing = true;
+  notify();
   try {
     safeStatus(api, ctx, "in-progress");
     if (!ytInstalled) {
@@ -171,6 +174,9 @@ async function ensureBinariesInstalled(api: PluginApi, ctx: PluginContext, myId:
       message: "FFmpeg install failed - downloads will use single-file formats without thumbnail/metadata embedding.",
     });
     return await isYtDlpInstalled(api); // yt-dlp alone can still work without ffmpeg for some formats
+  } finally {
+    installing = false;
+    notify();
   }
 }
 
@@ -343,6 +349,26 @@ export function Component({ api }: { api: PluginApi }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0 }}>
+      {installing && (
+        <>
+          <api.ui.Blanket />
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 11,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+            }}
+          >
+            <api.ui.Spinner size={32} />
+            <span style={{ color: palette.text }}>Installing YT-DLP...</span>
+          </div>
+        </>
+      )}
       <h2 style={{ margin: 0 }}>YT-DLP</h2>
 
       {banner && (

@@ -282,7 +282,7 @@ async function killProcessTree(api, pid) {
 }
 
 // index.tsx
-import { jsx, jsxs } from "react/jsx-runtime";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 var STATE_FILE = "queue-state.json";
 var queue = [];
 var outputDirectory = "";
@@ -292,6 +292,7 @@ var banner = null;
 var ytdlpAvailable = false;
 var ffmpegAvailable = false;
 var processing = false;
+var installing = false;
 var activeChild = null;
 var listeners = /* @__PURE__ */ new Set();
 function notify() {
@@ -360,6 +361,8 @@ async function ensureBinariesInstalled(api, ctx, myId, paths) {
     cancelLabel: "Not Now"
   });
   if (!confirmed || !isOwner(myId)) return false;
+  installing = true;
+  notify();
   try {
     safeStatus(api, ctx, "in-progress");
     if (!ytInstalled) {
@@ -385,6 +388,9 @@ async function ensureBinariesInstalled(api, ctx, myId, paths) {
       message: "FFmpeg install failed - downloads will use single-file formats without thumbnail/metadata embedding."
     });
     return await isYtDlpInstalled(api);
+  } finally {
+    installing = false;
+    notify();
   }
 }
 async function checkForUpdates(api, ctx, myId, paths) {
@@ -529,6 +535,28 @@ function Component({ api }) {
     }
   };
   return /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0 }, children: [
+    installing && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx(api.ui.Blanket, {}),
+      /* @__PURE__ */ jsxs(
+        "div",
+        {
+          style: {
+            position: "absolute",
+            inset: 0,
+            zIndex: 11,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8
+          },
+          children: [
+            /* @__PURE__ */ jsx(api.ui.Spinner, { size: 32 }),
+            /* @__PURE__ */ jsx("span", { style: { color: palette.text }, children: "Installing YT-DLP..." })
+          ]
+        }
+      )
+    ] }),
     /* @__PURE__ */ jsx("h2", { style: { margin: 0 }, children: "YT-DLP" }),
     banner && /* @__PURE__ */ jsx(api.ui.Banner, { message: banner.message, tone: banner.tone, onDismiss: () => setBanner(null) }),
     /* @__PURE__ */ jsxs("div", { children: [
