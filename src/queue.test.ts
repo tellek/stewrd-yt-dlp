@@ -7,7 +7,9 @@ import {
   reorderQueue,
   splitLines,
   parseDownloadProgressLine,
+  isPostProcessingLine,
   ProgressTracker,
+  estimateStreamCount,
   buildArgs,
 } from "./queue";
 import { DEFAULT_SETTINGS } from "./settings";
@@ -116,22 +118,58 @@ describe("parseDownloadProgressLine", () => {
 });
 
 describe("ProgressTracker", () => {
-  it("passes through a single-stream 0->100 sequence unchanged", () => {
+  it("passes through a single-stream 0->100 sequence unchanged (default/1 expected stream)", () => {
     const t = new ProgressTracker();
     expect(t.update(0)).toBe(0);
     expect(t.update(50)).toBe(50);
     expect(t.update(100)).toBe(100);
   });
 
-  it("folds a two-stream reset (video then audio) into a monotonic 0->100", () => {
-    const t = new ProgressTracker();
+  it("when told upfront to expect 2 streams, stage 1 correctly reports only up to 50% (not a misleading 100%)", () => {
+    const t = new ProgressTracker(2);
     expect(t.update(0)).toBe(0);
-    expect(t.update(50)).toBe(50);
-    expect(t.update(100)).toBe(100);
-    // second stream restarts at 0 - must not report a drop back to 0/25
+    expect(t.update(50)).toBe(25);
+    expect(t.update(100)).toBe(50); // end of stream 1 - correctly halfway, not 100
+    // stream 2 restarts at 0 - continues smoothly from 50, never backwards
     expect(t.update(0)).toBe(50);
     expect(t.update(50)).toBe(75);
     expect(t.update(100)).toBe(100);
+  });
+
+  it("never regresses below its own historical max even if the stream-count guess turns out wrong", () => {
+    const t = new ProgressTracker(1); // wrong guess: caller expected only 1 stream
+    expect(t.update(100)).toBe(100);
+    // an unexpected second stream resets to 0 - reactive detection kicks in,
+    // but the clamp guarantees the displayed value never drops below 100
+    expect(t.update(0)).toBe(100);
+    expect(t.update(50)).toBe(100);
+  });
+});
+
+describe("estimateStreamCount", () => {
+  it("is 1 for audioOnly regardless of format", () => {
+    expect(estimateStreamCount({ audioOnly: true, format: "bestvideo+bestaudio/best" })).toBe(1);
+  });
+
+  it("is 2 for a '+'-combined video+audio format selector", () => {
+    expect(estimateStreamCount({ audioOnly: false, format: "bestvideo+bestaudio/best" })).toBe(2);
+  });
+
+  it("is 1 for a single-format selector", () => {
+    expect(estimateStreamCount({ audioOnly: false, format: "best" })).toBe(1);
+  });
+});
+
+describe("isPostProcessingLine", () => {
+  it("recognizes common ffmpeg post-processing markers", () => {
+    expect(isPostProcessingLine("[Merger] Merging formats into \"video.mp4\"")).toBe(true);
+    expect(isPostProcessingLine("[Metadata] Adding metadata to \"video.mp4\"")).toBe(true);
+    expect(isPostProcessingLine("[EmbedThumbnail] Adding thumbnail to \"video.mp4\"")).toBe(true);
+    expect(isPostProcessingLine("[ffmpeg] Merging formats")).toBe(true);
+  });
+
+  it("does not match a normal download progress line", () => {
+    expect(isPostProcessingLine("[download]  45.2% of 10.00MiB at 1.20MiB/s ETA 00:05")).toBe(false);
   });
 });
 
@@ -157,12 +195,20 @@ describe("buildArgs", () => {
     expect(args).not.toContain("--download-archive");
   });
 
-  it("adds --sleep-requests only when > 0", () => {
-    const withSleep = buildArgs(DEFAULT_SETTINGS, opts);
-    expect(withSleep).toEqual(expect.arrayContaining(["--sleep-requests", "3"]));
+  it("adds --sleep-interval/--max-sleep-interval as a randomized range by default", () => {
+    const args = buildArgs(DEFAULT_SETTINGS, opts);
+    expect(args).toEqual(expect.arrayContaining(["--sleep-interval", "5"]));
+    expect(args).toEqual(expect.arrayContaining(["--max-sleep-interval", "25"]));
+  });
 
-    const noSleep = buildArgs({ ...DEFAULT_SETTINGS, sleepBetweenDownloadsSeconds: 0 }, opts);
-    expect(noSleep).not.toContain("--sleep-requests");
+  it("omits --max-sleep-interval when max <= min, and both flags when min is 0", () => {
+    const fixedOnly = buildArgs({ ...DEFAULT_SETTINGS, sleepIntervalMinSeconds: 5, sleepIntervalMaxSeconds: 5 }, opts);
+    expect(fixedOnly).toEqual(expect.arrayContaining(["--sleep-interval", "5"]));
+    expect(fixedOnly).not.toContain("--max-sleep-interval");
+
+    const noSleep = buildArgs({ ...DEFAULT_SETTINGS, sleepIntervalMinSeconds: 0, sleepIntervalMaxSeconds: 25 }, opts);
+    expect(noSleep).not.toContain("--sleep-interval");
+    expect(noSleep).not.toContain("--max-sleep-interval");
   });
 
   it("adds -x/--audio-format when audioOnly is set", () => {

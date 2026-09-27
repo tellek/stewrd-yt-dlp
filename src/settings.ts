@@ -30,7 +30,8 @@ export interface YtDlpSettings {
   rateLimit: string;
   concurrentFragments: number;
   retries: number;
-  sleepBetweenDownloadsSeconds: number;
+  sleepIntervalMinSeconds: number;
+  sleepIntervalMaxSeconds: number;
   cookiesFromBrowser: string;
   proxy: string;
   extraArgs: string[];
@@ -42,7 +43,7 @@ export const DEFAULT_SETTINGS: YtDlpSettings = {
   format: "bestvideo+bestaudio/best",
   downloadPlaylists: false,
   playlistItems: "",
-  audioOnly: false,
+  audioOnly: true,
   audioFormat: "mp3",
   embedThumbnail: true,
   embedMetadata: true,
@@ -61,7 +62,8 @@ export const DEFAULT_SETTINGS: YtDlpSettings = {
   rateLimit: "",
   concurrentFragments: 1,
   retries: 10,
-  sleepBetweenDownloadsSeconds: 3,
+  sleepIntervalMinSeconds: 5,
+  sleepIntervalMaxSeconds: 25,
   cookiesFromBrowser: "",
   proxy: "",
   extraArgs: [],

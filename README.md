@@ -13,11 +13,11 @@ A Stewrd plugin that wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp) in a simpl
 
 Most yt-dlp behavior is configured via **Settings > Plugins > Configure**, editing this plugin's `settings.json` directly. See the field-by-field notes in that file's comments-equivalent (the plan doc) for what each option maps to, but in short:
 
-- `format` / `audioOnly` / `audioFormat` - what to download.
+- `format` / `audioOnly` / `audioFormat` - what to download. Audio-only (mp3) is the default, both here and as the default choice in the Format dropdown in the plugin's UI.
 - `outputTemplate` - yt-dlp's `-o` filename template (the output *folder* itself is set from the plugin's UI, not here).
 - `embedThumbnail` / `embedMetadata` / `embedChapters` - post-processing polish (requires FFmpeg, installed automatically).
 - `subtitles.*` / `sponsorBlock.*` - optional extras, off by default.
-- `sleepBetweenDownloadsSeconds` / `cookiesFromBrowser` - the two main mitigations against YouTube's temporary rate-limiting/bans; both are on/available by default (a 3-second sleep) or can be set to use a real logged-in browser session.
+- `sleepIntervalMinSeconds` / `sleepIntervalMaxSeconds` / `cookiesFromBrowser` - the main mitigations against YouTube's temporary rate-limiting/bans. By default each download waits a randomized 5-25 seconds (`--sleep-interval`/`--max-sleep-interval`) so requests don't look like a bot burst; `cookiesFromBrowser` can additionally be set to use a real logged-in browser session. Set both sleep values to `0` to disable.
 - `extraArgs` - escape hatch for any yt-dlp flag not modeled above.
 
 ## Development

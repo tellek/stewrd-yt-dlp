@@ -7,7 +7,7 @@
   "downloadPlaylists": false,
   "playlistItems": "",
 
-  "audioOnly": false,
+  "audioOnly": true,
   "audioFormat": "mp3",
 
   "embedThumbnail": true,
@@ -30,7 +30,8 @@
   "rateLimit": "",
   "concurrentFragments": 1,
   "retries": 10,
-  "sleepBetweenDownloadsSeconds": 3,
+  "sleepIntervalMinSeconds": 5,
+  "sleepIntervalMaxSeconds": 25,
   "cookiesFromBrowser": "",
   "proxy": "",
 

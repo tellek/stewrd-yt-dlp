@@ -7,7 +7,7 @@ var DEFAULT_SETTINGS = {
   format: "bestvideo+bestaudio/best",
   downloadPlaylists: false,
   playlistItems: "",
-  audioOnly: false,
+  audioOnly: true,
   audioFormat: "mp3",
   embedThumbnail: true,
   embedMetadata: true,
@@ -26,7 +26,8 @@ var DEFAULT_SETTINGS = {
   rateLimit: "",
   concurrentFragments: 1,
   retries: 10,
-  sleepBetweenDownloadsSeconds: 3,
+  sleepIntervalMinSeconds: 5,
+  sleepIntervalMaxSeconds: 25,
   cookiesFromBrowser: "",
   proxy: "",
   extraArgs: [],
@@ -61,7 +62,15 @@ function makeId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 function createQueueItem(url) {
-  return { id: makeId(), url: url.trim(), status: "queued", progress: 0, etaSeconds: null, error: null };
+  return {
+    id: makeId(),
+    url: url.trim(),
+    status: "queued",
+    progress: 0,
+    etaSeconds: null,
+    error: null,
+    finalizing: false
+  };
 }
 function addToQueue(queue2, url) {
   const trimmed = url.trim();
@@ -73,7 +82,7 @@ function removeFromQueue(queue2, id) {
 }
 function resetInterruptedItems(queue2) {
   return queue2.map(
-    (item) => item.status === "downloading" ? { ...item, status: "queued", progress: 0, etaSeconds: null } : item
+    (item) => item.status === "downloading" ? { ...item, status: "queued", progress: 0, etaSeconds: null, finalizing: false } : item
   );
 }
 function reorderQueue(queue2, sourceId, targetId) {
@@ -113,10 +122,18 @@ function parseEta(raw) {
   if (parts.length === 0 || parts.some((n) => Number.isNaN(n))) return null;
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
+function estimateStreamCount(settings) {
+  if (settings.audioOnly) return 1;
+  return settings.format.includes("+") ? 2 : 1;
+}
 var ProgressTracker = class {
   stagesCompleted = 0;
-  stageCount = 1;
+  stageCount;
   lastRaw = 0;
+  maxOverall = 0;
+  constructor(expectedStreamCount = 1) {
+    this.stageCount = Math.max(1, expectedStreamCount);
+  }
   update(rawPercent) {
     if (rawPercent < this.lastRaw - 5) {
       this.stagesCompleted += 1;
@@ -124,9 +141,14 @@ var ProgressTracker = class {
     }
     this.lastRaw = rawPercent;
     const overall = (this.stagesCompleted * 100 + rawPercent) / this.stageCount;
-    return Math.min(100, Math.max(0, overall));
+    this.maxOverall = Math.max(this.maxOverall, Math.min(100, Math.max(0, overall)));
+    return this.maxOverall;
   }
 };
+var POST_PROCESS_RE = /^\[(Merger|Metadata|EmbedThumbnail|ffmpeg|SponsorBlock|EmbedSubtitle)\]/;
+function isPostProcessingLine(line) {
+  return POST_PROCESS_RE.test(line.trim());
+}
 function buildArgs(settings, opts) {
   const args = ["--newline", "--ignore-errors", "-i", "--no-color", "--ffmpeg-location", opts.binDir];
   args.push("-f", settings.format);
@@ -160,8 +182,11 @@ function buildArgs(settings, opts) {
   if (settings.rateLimit.trim()) args.push("--limit-rate", settings.rateLimit.trim());
   args.push("-N", String(settings.concurrentFragments));
   args.push("--retries", String(settings.retries));
-  if (settings.sleepBetweenDownloadsSeconds > 0) {
-    args.push("--sleep-requests", String(settings.sleepBetweenDownloadsSeconds));
+  if (settings.sleepIntervalMinSeconds > 0) {
+    args.push("--sleep-interval", String(settings.sleepIntervalMinSeconds));
+    if (settings.sleepIntervalMaxSeconds > settings.sleepIntervalMinSeconds) {
+      args.push("--max-sleep-interval", String(settings.sleepIntervalMaxSeconds));
+    }
   }
   if (settings.cookiesFromBrowser.trim()) {
     args.push("--cookies-from-browser", settings.cookiesFromBrowser.trim());
@@ -441,7 +466,7 @@ async function runProcessingLoop(api, ctx, myId, paths) {
     while (isOwner(myId)) {
       const item = nextQueuedItem(queue);
       if (!item || !currentSettings) break;
-      setQueue(updateItem(queue, item.id, { status: "downloading" }));
+      setQueue(updateItem(queue, item.id, { status: "downloading", finalizing: false }));
       await saveState(api, myId);
       safeStatus(api, ctx, "in-progress");
       const args = buildArgs(currentSettings, {
@@ -453,7 +478,7 @@ async function runProcessingLoop(api, ctx, myId, paths) {
       let stdoutCarry = "";
       let stderrCarry = "";
       let lastError = "";
-      const tracker = new ProgressTracker();
+      const tracker = new ProgressTracker(estimateStreamCount(currentSettings));
       const child = api.shell.spawn(paths.ytDlpExe, args, {
         onStdout: (chunk) => {
           if (!isOwner(myId)) return;
@@ -464,6 +489,8 @@ async function runProcessingLoop(api, ctx, myId, paths) {
             if (parsed) {
               const overall = tracker.update(parsed.percent);
               setQueue(updateItem(queue, item.id, { progress: overall, etaSeconds: parsed.etaSeconds }));
+            } else if (isPostProcessingLine(line)) {
+              setQueue(updateItem(queue, item.id, { finalizing: true, etaSeconds: null }));
             }
           }
         },
@@ -527,9 +554,9 @@ async function activate(ctx) {
 function deactivate() {
 }
 var FORMAT_PRESETS = [
+  { label: "Audio Only (MP3)", value: "audio-only" },
   { label: "Best", value: "bestvideo+bestaudio/best" },
-  { label: "1080p Max", value: "bestvideo[height<=1080]+bestaudio/best[height<=1080]" },
-  { label: "Audio Only (MP3)", value: "audio-only" }
+  { label: "1080p Max", value: "bestvideo[height<=1080]+bestaudio/best[height<=1080]" }
 ];
 function Component({ api }) {
   const [, setTick] = useState(0);
@@ -671,8 +698,8 @@ function Component({ api }) {
                 ] }),
                 item.status === "downloading" && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 }, children: [
                   /* @__PURE__ */ jsx(api.ui.Spinner, { size: 14 }),
-                  /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(api.ui.ProgressBar, { value: item.progress }) }),
-                  /* @__PURE__ */ jsx("span", { style: { color: palette.textMuted, fontSize: 12 }, children: item.etaSeconds != null ? `ETA ${formatEta(item.etaSeconds)}` : "" })
+                  /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(api.ui.ProgressBar, { value: item.finalizing ? 100 : item.progress }) }),
+                  /* @__PURE__ */ jsx("span", { style: { color: palette.textMuted, fontSize: 12 }, children: item.finalizing ? "Finalizing..." : item.etaSeconds != null ? `ETA ${formatEta(item.etaSeconds)}` : "" })
                 ] }),
                 item.status === "error" && /* @__PURE__ */ jsx(api.ui.Banner, { message: item.error ?? "Download Failed", tone: "error" })
               ]

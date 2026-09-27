@@ -11,7 +11,9 @@ import {
   updateItem,
   splitLines,
   parseDownloadProgressLine,
+  isPostProcessingLine,
   ProgressTracker,
+  estimateStreamCount,
   buildArgs,
   type QueueItem,
 } from "./src/queue";
@@ -239,7 +241,7 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
       const item = nextQueuedItem(queue);
       if (!item || !currentSettings) break;
 
-      setQueue(updateItem(queue, item.id, { status: "downloading" }));
+      setQueue(updateItem(queue, item.id, { status: "downloading", finalizing: false }));
       await saveState(api, myId);
       safeStatus(api, ctx, "in-progress");
 
@@ -253,7 +255,7 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
       let stdoutCarry = "";
       let stderrCarry = "";
       let lastError = "";
-      const tracker = new ProgressTracker();
+      const tracker = new ProgressTracker(estimateStreamCount(currentSettings));
 
       const child = api.shell.spawn(paths.ytDlpExe, args, {
         onStdout: (chunk) => {
@@ -265,6 +267,8 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
             if (parsed) {
               const overall = tracker.update(parsed.percent);
               setQueue(updateItem(queue, item.id, { progress: overall, etaSeconds: parsed.etaSeconds }));
+            } else if (isPostProcessingLine(line)) {
+              setQueue(updateItem(queue, item.id, { finalizing: true, etaSeconds: null }));
             }
           }
         },
@@ -341,9 +345,9 @@ export function deactivate() {}
 // --- UI -----------------------------------------------------------------
 
 const FORMAT_PRESETS = [
+  { label: "Audio Only (MP3)", value: "audio-only" },
   { label: "Best", value: "bestvideo+bestaudio/best" },
   { label: "1080p Max", value: "bestvideo[height<=1080]+bestaudio/best[height<=1080]" },
-  { label: "Audio Only (MP3)", value: "audio-only" },
 ];
 
 export function Component({ api }: { api: PluginApi }) {
@@ -351,7 +355,7 @@ export function Component({ api }: { api: PluginApi }) {
   const [palette, setPalette] = useState(api.theme.palette);
   const [url, setUrl] = useState("");
   const [folder, setFolder] = useState(outputDirectory);
-  const [format, setFormat] = useState(FORMAT_PRESETS[0].value);
+  const [format, setFormat] = useState(FORMAT_PRESETS[0].value); // Audio Only is the default
 
   useEffect(() => {
     const rerender = () => {
@@ -495,10 +499,14 @@ export function Component({ api }: { api: PluginApi }) {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                 <api.ui.Spinner size={14} />
                 <div style={{ flex: 1 }}>
-                  <api.ui.ProgressBar value={item.progress} />
+                  <api.ui.ProgressBar value={item.finalizing ? 100 : item.progress} />
                 </div>
                 <span style={{ color: palette.textMuted, fontSize: 12 }}>
-                  {item.etaSeconds != null ? `ETA ${formatEta(item.etaSeconds)}` : ""}
+                  {item.finalizing
+                    ? "Finalizing..."
+                    : item.etaSeconds != null
+                      ? `ETA ${formatEta(item.etaSeconds)}`
+                      : ""}
                 </span>
               </div>
             )}

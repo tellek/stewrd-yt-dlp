@@ -9,6 +9,10 @@ export interface QueueItem {
   progress: number;
   etaSeconds: number | null;
   error: string | null;
+  // True once yt-dlp has moved into ffmpeg post-processing (merge/embed
+  // steps) - no [download] progress lines are printed during this, so the
+  // UI shows "Finalizing..." instead of a stalled-looking progress bar.
+  finalizing: boolean;
 }
 
 function makeId(): string {
@@ -18,7 +22,15 @@ function makeId(): string {
 }
 
 export function createQueueItem(url: string): QueueItem {
-  return { id: makeId(), url: url.trim(), status: "queued", progress: 0, etaSeconds: null, error: null };
+  return {
+    id: makeId(),
+    url: url.trim(),
+    status: "queued",
+    progress: 0,
+    etaSeconds: null,
+    error: null,
+    finalizing: false,
+  };
 }
 
 export function addToQueue(queue: QueueItem[], url: string): QueueItem[] {
@@ -37,7 +49,9 @@ export function removeFromQueue(queue: QueueItem[], id: string): QueueItem[] {
 // harmless duplicate download (see plan's "Interrupted item on takeover").
 export function resetInterruptedItems(queue: QueueItem[]): QueueItem[] {
   return queue.map((item) =>
-    item.status === "downloading" ? { ...item, status: "queued", progress: 0, etaSeconds: null } : item,
+    item.status === "downloading"
+      ? { ...item, status: "queued", progress: 0, etaSeconds: null, finalizing: false }
+      : item,
   );
 }
 
@@ -97,14 +111,26 @@ function parseEta(raw: string): number | null {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
-// bestvideo+bestaudio (and similar multi-format selectors) download two
-// streams sequentially, so raw percent resets 0->100 twice. This tracker
-// detects a backward jump and folds it into a monotonically non-decreasing
-// overall percent instead of letting the UI's progress bar jump backwards.
+// A "bestvideo+bestaudio"-style format downloads two separate streams
+// sequentially (merged by ffmpeg afterward), so raw percent resets 0->100
+// twice. estimateStreamCount lets the tracker know that *up front* instead
+// of discovering it reactively - without this, the first stream alone would
+// incorrectly report 100% (it's really only ~50% of the total work), then
+// visibly snap backwards once the second stream starts and resets to 0%.
+export function estimateStreamCount(settings: Pick<YtDlpSettings, "audioOnly" | "format">): number {
+  if (settings.audioOnly) return 1;
+  return settings.format.includes("+") ? 2 : 1;
+}
+
 export class ProgressTracker {
   private stagesCompleted = 0;
-  private stageCount = 1;
+  private stageCount: number;
   private lastRaw = 0;
+  private maxOverall = 0;
+
+  constructor(expectedStreamCount = 1) {
+    this.stageCount = Math.max(1, expectedStreamCount);
+  }
 
   update(rawPercent: number): number {
     if (rawPercent < this.lastRaw - 5) {
@@ -113,8 +139,23 @@ export class ProgressTracker {
     }
     this.lastRaw = rawPercent;
     const overall = (this.stagesCompleted * 100 + rawPercent) / this.stageCount;
-    return Math.min(100, Math.max(0, overall));
+    // Clamped and never allowed to regress below its own historical max -
+    // a safety net for any stage-count guess that still turns out wrong, so
+    // the displayed bar can never visibly jump backwards.
+    this.maxOverall = Math.max(this.maxOverall, Math.min(100, Math.max(0, overall)));
+    return this.maxOverall;
   }
+}
+
+// Once both streams finish downloading, yt-dlp moves into ffmpeg
+// post-processing (merging, embedding thumbnail/metadata, SponsorBlock) -
+// steps that print no [download] progress lines at all, so the bar would
+// otherwise appear to just hang. Detecting these lines lets the UI switch to
+// a "Finalizing..." label instead of looking stuck or broken.
+const POST_PROCESS_RE = /^\[(Merger|Metadata|EmbedThumbnail|ffmpeg|SponsorBlock|EmbedSubtitle)\]/;
+
+export function isPostProcessingLine(line: string): boolean {
+  return POST_PROCESS_RE.test(line.trim());
 }
 
 export interface BuildArgsOptions {
@@ -168,8 +209,11 @@ export function buildArgs(settings: YtDlpSettings, opts: BuildArgsOptions): stri
   if (settings.rateLimit.trim()) args.push("--limit-rate", settings.rateLimit.trim());
   args.push("-N", String(settings.concurrentFragments));
   args.push("--retries", String(settings.retries));
-  if (settings.sleepBetweenDownloadsSeconds > 0) {
-    args.push("--sleep-requests", String(settings.sleepBetweenDownloadsSeconds));
+  if (settings.sleepIntervalMinSeconds > 0) {
+    args.push("--sleep-interval", String(settings.sleepIntervalMinSeconds));
+    if (settings.sleepIntervalMaxSeconds > settings.sleepIntervalMinSeconds) {
+      args.push("--max-sleep-interval", String(settings.sleepIntervalMaxSeconds));
+    }
   }
   if (settings.cookiesFromBrowser.trim()) {
     args.push("--cookies-from-browser", settings.cookiesFromBrowser.trim());
