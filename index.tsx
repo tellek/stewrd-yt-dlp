@@ -29,6 +29,21 @@ import {
   type BinPaths,
 } from "./src/ytdlp";
 
+// api.ui.TextBox is a <textarea> with a hardcoded `resize: vertical` inline
+// style and no prop to override it - a scoped CSS override (same
+// inject-once pattern stewrd-terminal uses for its xterm CSS) is the only
+// way to make the single-line Output Folder / Paste A Video URL boxes
+// non-resizable, since inline styles can only be beaten by an !important
+// rule, not another inline style from the plugin side.
+const NO_RESIZE_CLASS = "stewrd-yt-dlp-no-resize";
+function injectNoResizeCssOnce() {
+  if (document.getElementById("stewrd-yt-dlp-no-resize-css")) return;
+  const style = document.createElement("style");
+  style.id = "stewrd-yt-dlp-no-resize-css";
+  style.textContent = `.${NO_RESIZE_CLASS} textarea { resize: none !important; }`;
+  document.head.appendChild(style);
+}
+
 // --- module-scope runtime state ---------------------------------------
 // Lives here (not inside Component) so processing keeps running whether or
 // not the plugin's pane is mounted - this is why plugin.json sets
@@ -325,6 +340,7 @@ export function Component({ api }: { api: PluginApi }) {
   }, []);
 
   useEffect(() => api.theme.subscribe(setPalette), [api]);
+  useEffect(() => injectNoResizeCssOnce(), []);
 
   const submitUrl = () => {
     if (!url.trim()) return;
@@ -375,7 +391,7 @@ export function Component({ api }: { api: PluginApi }) {
         <api.ui.Banner message={banner.message} tone={banner.tone} onDismiss={() => setBanner(null)} />
       )}
 
-      <div>
+      <div className={NO_RESIZE_CLASS}>
         <div style={{ marginBottom: 4, color: palette.textMuted }}>Output Folder</div>
         <api.ui.TextBox value={folder} onChange={changeFolder} rows={1} placeholder="C:\Users\you\Downloads" />
       </div>
@@ -394,7 +410,7 @@ export function Component({ api }: { api: PluginApi }) {
         }}
         style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
       >
-        <div style={{ flex: 1 }}>
+        <div className={NO_RESIZE_CLASS} style={{ flex: 1 }}>
           <api.ui.TextBox value={url} onChange={setUrl} rows={1} placeholder="Paste A Video URL" />
         </div>
         <api.ui.TextButton label="Add To Queue" variant="primary" onClick={submitUrl} />

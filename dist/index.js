@@ -283,6 +283,14 @@ async function killProcessTree(api, pid) {
 
 // index.tsx
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+var NO_RESIZE_CLASS = "stewrd-yt-dlp-no-resize";
+function injectNoResizeCssOnce() {
+  if (document.getElementById("stewrd-yt-dlp-no-resize-css")) return;
+  const style = document.createElement("style");
+  style.id = "stewrd-yt-dlp-no-resize-css";
+  style.textContent = `.${NO_RESIZE_CLASS} textarea { resize: none !important; }`;
+  document.head.appendChild(style);
+}
 var STATE_FILE = "queue-state.json";
 var queue = [];
 var outputDirectory = "";
@@ -516,6 +524,7 @@ function Component({ api }) {
     };
   }, []);
   useEffect(() => api.theme.subscribe(setPalette), [api]);
+  useEffect(() => injectNoResizeCssOnce(), []);
   const submitUrl = () => {
     if (!url.trim()) return;
     setQueue(addToQueue(queue, url.trim()));
@@ -559,7 +568,7 @@ function Component({ api }) {
     ] }),
     /* @__PURE__ */ jsx("h2", { style: { margin: 0 }, children: "YT-DLP" }),
     banner && /* @__PURE__ */ jsx(api.ui.Banner, { message: banner.message, tone: banner.tone, onDismiss: () => setBanner(null) }),
-    /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsxs("div", { className: NO_RESIZE_CLASS, children: [
       /* @__PURE__ */ jsx("div", { style: { marginBottom: 4, color: palette.textMuted }, children: "Output Folder" }),
       /* @__PURE__ */ jsx(api.ui.TextBox, { value: folder, onChange: changeFolder, rows: 1, placeholder: "C:\\Users\\you\\Downloads" })
     ] }),
@@ -578,7 +587,7 @@ function Component({ api }) {
         },
         style: { display: "flex", gap: 8, alignItems: "flex-start" },
         children: [
-          /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(api.ui.TextBox, { value: url, onChange: setUrl, rows: 1, placeholder: "Paste A Video URL" }) }),
+          /* @__PURE__ */ jsx("div", { className: NO_RESIZE_CLASS, style: { flex: 1 }, children: /* @__PURE__ */ jsx(api.ui.TextBox, { value: url, onChange: setUrl, rows: 1, placeholder: "Paste A Video URL" }) }),
           /* @__PURE__ */ jsx(api.ui.TextButton, { label: "Add To Queue", variant: "primary", onClick: submitUrl })
         ]
       }
