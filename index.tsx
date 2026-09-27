@@ -474,7 +474,7 @@ export function Component({ api }: { api: PluginApi }) {
               png={anonymousIcon}
               alt="Anonymous"
               size={40}
-              color={sessionCookiesBrowser ? palette.status.success : palette.status["in-progress"]}
+              color={palette.accent}
             />
           )}
           <span style={{ fontSize: 11, color: palette.textMuted }}>
