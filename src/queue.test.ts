@@ -203,6 +203,20 @@ describe("buildArgs", () => {
     expect(withoutCookies).not.toContain("--cookies-from-browser");
   });
 
+  it("adds --merge-output-format only when set and not audioOnly", () => {
+    const withMerge = buildArgs({ ...DEFAULT_SETTINGS, audioOnly: false }, { ...opts, mergeOutputFormat: "mkv" });
+    expect(withMerge).toEqual(expect.arrayContaining(["--merge-output-format", "mkv"]));
+
+    const audioOnlyIgnoresMerge = buildArgs(
+      { ...DEFAULT_SETTINGS, audioOnly: true },
+      { ...opts, mergeOutputFormat: "mkv" },
+    );
+    expect(audioOnlyIgnoresMerge).not.toContain("--merge-output-format");
+
+    const withoutMerge = buildArgs({ ...DEFAULT_SETTINGS, audioOnly: false }, { ...opts, mergeOutputFormat: null });
+    expect(withoutMerge).not.toContain("--merge-output-format");
+  });
+
   it("adds --sleep-interval/--max-sleep-interval as a randomized range by default", () => {
     const args = buildArgs(DEFAULT_SETTINGS, opts);
     expect(args).toEqual(expect.arrayContaining(["--sleep-interval", "5"]));

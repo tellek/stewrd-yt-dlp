@@ -33,6 +33,9 @@ import {
 } from "./src/ytdlp";
 import { openDefaultBrowserAtYouTubeAndDetect } from "./src/browserCookies";
 import anonymousIcon from "./icons/anonymous.png";
+import mp3Icon from "./icons/mp3.png";
+import mp4Icon from "./icons/mp4.png";
+import mkvIcon from "./icons/mkv.png";
 
 // api.ui.TextBox is a <textarea> with a hardcoded `resize: vertical` inline
 // style and no prop to override it - a scoped CSS override (same
@@ -76,6 +79,7 @@ let activeChild: { pid: number } | null = null;
 // resets to null on every app restart, matching "for the rest of this
 // session" rather than a settings.json preference.
 let sessionCookiesBrowser: string | null = null;
+let selectedMergeFormat: string | null = null;
 let detectingBrowser = false;
 
 // Captured once in activate() so UI-driven actions (add/remove/reorder from
@@ -259,6 +263,7 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
         archivePath,
         url: item.url,
         cookiesFromBrowser: sessionCookiesBrowser,
+        mergeOutputFormat: selectedMergeFormat,
       });
 
       let stdoutCarry = "";
@@ -361,18 +366,37 @@ export function deactivate() {}
 
 // --- UI -----------------------------------------------------------------
 
-const FORMAT_PRESETS = [
-  { label: "Audio Only (MP3)", value: "audio-only" },
-  { label: "Best", value: "bestvideo+bestaudio/best" },
-  { label: "1080p Max", value: "bestvideo[height<=1080]+bestaudio/best[height<=1080]" },
+type FormatKey = "mp3" | "mp4" | "mkv";
+
+const FORMAT_OPTIONS: { key: FormatKey; icon: string; label: string }[] = [
+  { key: "mp3", icon: mp3Icon, label: "Audio" },
+  { key: "mp4", icon: mp4Icon, label: "1080" },
+  { key: "mkv", icon: mkvIcon, label: "Best" },
 ];
+
+// Patches currentSettings + the merge container for a given format icon.
+// mp4/mkv also force --merge-output-format so the container matches the
+// icon the user actually clicked, instead of leaving it to yt-dlp's own
+// (less predictable) default merge-container choice.
+function applyFormatKey(settings: YtDlpSettings, key: FormatKey): { settings: YtDlpSettings; mergeOutputFormat: string | null } {
+  if (key === "mp3") {
+    return { settings: { ...settings, audioOnly: true, audioFormat: "mp3" }, mergeOutputFormat: null };
+  }
+  if (key === "mp4") {
+    return {
+      settings: { ...settings, audioOnly: false, format: "bestvideo[height<=1080]+bestaudio/best[height<=1080]" },
+      mergeOutputFormat: "mp4",
+    };
+  }
+  return { settings: { ...settings, audioOnly: false, format: "bestvideo+bestaudio/best" }, mergeOutputFormat: "mkv" };
+}
 
 export function Component({ api }: { api: PluginApi }) {
   const [, setTick] = useState(0);
   const [palette, setPalette] = useState(api.theme.palette);
   const [url, setUrl] = useState("");
   const [folder, setFolder] = useState(outputDirectory);
-  const [format, setFormat] = useState(FORMAT_PRESETS[0].value); // Audio Only is the default
+  const [formatKey, setFormatKey] = useState<FormatKey>("mp3"); // mp3/Audio is the default
 
   useEffect(() => {
     const rerender = () => {
@@ -400,14 +424,12 @@ export function Component({ api }: { api: PluginApi }) {
     outputDirectory = value;
   };
 
-  const changeFormat = (value: string) => {
-    setFormat(value);
+  const changeFormat = (key: FormatKey) => {
+    setFormatKey(key);
     if (!currentSettings) return;
-    if (value === "audio-only") {
-      currentSettings = { ...currentSettings, audioOnly: true };
-    } else {
-      currentSettings = { ...currentSettings, audioOnly: false, format: value };
-    }
+    const { settings, mergeOutputFormat } = applyFormatKey(currentSettings, key);
+    currentSettings = settings;
+    selectedMergeFormat = mergeOutputFormat;
   };
 
   const useBrowserCookies = async () => {
@@ -465,9 +487,28 @@ export function Component({ api }: { api: PluginApi }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ marginBottom: 4, color: palette.textMuted }}>Format</div>
-          <api.ui.Dropdown options={FORMAT_PRESETS} value={format} onChange={changeFormat} />
+        <div style={{ flex: 1, display: "flex", gap: 16 }}>
+          {FORMAT_OPTIONS.map((opt) => {
+            const selected = formatKey === opt.key;
+            return (
+              <div
+                key={opt.key}
+                onClick={() => changeFormat(opt.key)}
+                title={opt.label}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer" }}
+              >
+                <api.ui.MaskIcon
+                  png={opt.icon}
+                  alt={opt.label}
+                  size={40}
+                  color={selected ? palette.accent : palette.status.idle}
+                />
+                <span style={{ fontSize: 11, color: palette.textMuted, visibility: selected ? "visible" : "hidden" }}>
+                  {opt.label}
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         <div

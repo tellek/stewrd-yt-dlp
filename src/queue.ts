@@ -166,6 +166,10 @@ export interface BuildArgsOptions {
   // Session-only, detected via the "Use Browser Cookies" button - never
   // persisted to settings.json (see src/browserCookies.ts).
   cookiesFromBrowser?: string | null;
+  // Set from the mp4/mkv format icon (see index.tsx applyFormatKey) so the
+  // merged container matches what the user clicked, instead of leaving it
+  // to yt-dlp's own less-predictable default merge-container choice.
+  mergeOutputFormat?: string | null;
 }
 
 // Assembles the full yt-dlp argument list for one queue item from settings.
@@ -220,6 +224,9 @@ export function buildArgs(settings: YtDlpSettings, opts: BuildArgsOptions): stri
   }
   if (opts.cookiesFromBrowser?.trim()) {
     args.push("--cookies-from-browser", opts.cookiesFromBrowser.trim());
+  }
+  if (!settings.audioOnly && opts.mergeOutputFormat?.trim()) {
+    args.push("--merge-output-format", opts.mergeOutputFormat.trim());
   }
   if (settings.proxy.trim()) args.push("--proxy", settings.proxy.trim());
 
