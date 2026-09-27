@@ -703,7 +703,7 @@ function Component({ api }) {
                 png: anonymous_default,
                 alt: "Anonymous",
                 size: 40,
-                color: palette.accent
+                color: sessionCookiesBrowser ? palette.status.idle : palette.accent
               }
             ),
             /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: palette.textMuted }, children: sessionCookiesBrowser ?? "Anon" })
