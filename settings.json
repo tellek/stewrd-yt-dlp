@@ -1,6 +1,6 @@
 {
   "category": "Utilities",
-  "version": "1.0.0",
+  "version": "1.0.1",
 
   "outputTemplate": "%(title)s [%(id)s].%(ext)s",
   "format": "bestvideo+bestaudio/best",
