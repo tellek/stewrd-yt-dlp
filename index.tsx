@@ -243,11 +243,48 @@ async function checkForUpdates(api: PluginApi, ctx: PluginContext, myId: string,
   }
 }
 
+// --- success flash ------------------------------------------------------
+// After a completed run the icon shows success for 5s, starting once the
+// window has focus so the user actually sees it.
+
+const SUCCESS_FLASH_MS = 5000;
+let completedPendingFocus = false;
+let successTimer: ReturnType<typeof setTimeout> | null = null;
+let focusListener: (() => void) | null = null;
+
+function cancelSuccessFlash() {
+  if (successTimer) clearTimeout(successTimer);
+  successTimer = null;
+  if (focusListener) window.removeEventListener("focus", focusListener);
+  focusListener = null;
+}
+
+function showSuccessThenIdle(api: PluginApi, ctx: PluginContext) {
+  cancelSuccessFlash();
+  const start = () => {
+    cancelSuccessFlash();
+    completedPendingFocus = false;
+    safeStatus(api, ctx, "success");
+    successTimer = setTimeout(() => {
+      successTimer = null;
+      if (!processing) safeStatus(api, ctx, queue.some((i) => i.status === "error") ? "error" : "idle");
+    }, SUCCESS_FLASH_MS);
+  };
+  if (document.hasFocus()) {
+    start();
+  } else {
+    focusListener = start;
+    window.addEventListener("focus", focusListener, { once: true });
+  }
+}
+
 // --- queue processing loop -------------------------------------------
 
 async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: string, paths: BinPaths) {
   if (processing || !isOwner(myId)) return;
   processing = true;
+  completedPendingFocus = false;
+  cancelSuccessFlash();
   try {
     while (isOwner(myId)) {
       const item = nextQueuedItem(queue);
@@ -255,7 +292,7 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
 
       setQueue(updateItem(queue, item.id, { status: "downloading", finalizing: false }));
       await saveState(api, myId);
-      safeStatus(api, ctx, "in-progress");
+      safeStatus(api, ctx, queue.some((i) => i.status === "error") ? "error" : "in-progress");
 
       const args = buildArgs(currentSettings, {
         binDir: paths.binDir,
@@ -303,6 +340,7 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
 
       if (result.code === 0) {
         setQueue(removeFromQueue(queue, item.id));
+        completedPendingFocus = true;
         safeLog(api, ctx, "info", `Downloaded: ${item.url}`);
         if (!ctx.signal.aborted) {
           try {
@@ -313,12 +351,22 @@ async function runProcessingLoop(api: PluginApi, ctx: PluginContext, myId: strin
         }
       } else {
         setQueue(updateItem(queue, item.id, { status: "error", error: lastError || `yt-dlp exited with code ${result.code}` }));
+        safeStatus(api, ctx, "error");
       }
       await saveState(api, myId);
     }
   } finally {
     processing = false;
-    if (isOwner(myId)) safeStatus(api, ctx, queue.some((i) => i.status === "error") ? "error" : "idle");
+    if (isOwner(myId)) {
+      if (queue.some((i) => i.status === "error")) {
+        completedPendingFocus = false;
+        safeStatus(api, ctx, "error");
+      } else if (completedPendingFocus) {
+        showSuccessThenIdle(api, ctx);
+      } else {
+        safeStatus(api, ctx, "idle");
+      }
+    }
   }
 }
 
@@ -345,6 +393,7 @@ export async function activate(ctx: PluginContext) {
   notify();
 
   ctx.onDispose(() => {
+    cancelSuccessFlash();
     if (activeChild) killProcessTree(ctx.api, activeChild.pid);
   });
 
