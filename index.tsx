@@ -217,12 +217,13 @@ async function ensureBinariesInstalled(api: PluginApi, ctx: PluginContext, myId:
     return true;
   } catch (err) {
     safeLog(api, ctx, "error", `Install failed: ${err}`);
-    safeStatus(api, ctx, "error");
+    const ytReady = await isYtDlpInstalled(api); // yt-dlp alone can still work without ffmpeg for some formats
+    safeStatus(api, ctx, ytReady ? "warning" : "error");
     setBanner({
       tone: "warning",
       message: "FFmpeg install failed - downloads will use single-file formats without thumbnail/metadata embedding.",
     });
-    return await isYtDlpInstalled(api); // yt-dlp alone can still work without ffmpeg for some formats
+    return ytReady;
   } finally {
     installing = false;
     notify();
@@ -244,38 +245,58 @@ async function checkForUpdates(api: PluginApi, ctx: PluginContext, myId: string,
 }
 
 // --- success flash ------------------------------------------------------
-// After a completed run the icon shows success for 5s, starting once the
-// window has focus so the user actually sees it.
+// After a completed run the icon holds success until the window and this
+// plugin's pane both have focus, then reverts 3s later.
 
-const SUCCESS_FLASH_MS = 5000;
+const SUCCESS_FLASH_MS = 3000;
 let completedPendingFocus = false;
+let successHeld = false;
+let paneMounted = false;
 let successTimer: ReturnType<typeof setTimeout> | null = null;
 let focusListener: (() => void) | null = null;
 
-function cancelSuccessFlash() {
+function clearSuccessTimer() {
   if (successTimer) clearTimeout(successTimer);
   successTimer = null;
-  if (focusListener) window.removeEventListener("focus", focusListener);
+}
+
+function cancelSuccessFlash() {
+  clearSuccessTimer();
+  successHeld = false;
+  if (focusListener) {
+    window.removeEventListener("focus", focusListener);
+    window.removeEventListener("blur", focusListener);
+  }
   focusListener = null;
+}
+
+// Starts the 3s countdown only while focused; losing focus or the pane pauses it.
+function syncSuccessFlash() {
+  if (!successHeld || !hostApi || !hostCtx) return;
+  if (!(paneMounted && document.hasFocus())) return clearSuccessTimer();
+  if (successTimer) return;
+  const api = hostApi;
+  const ctx = hostCtx;
+  successTimer = setTimeout(() => {
+    cancelSuccessFlash();
+    if (!processing) safeStatus(api, ctx, queue.some((i) => i.status === "error") ? "error" : "idle");
+  }, SUCCESS_FLASH_MS);
+}
+
+function setPaneMounted(mounted: boolean) {
+  paneMounted = mounted;
+  syncSuccessFlash();
 }
 
 function showSuccessThenIdle(api: PluginApi, ctx: PluginContext) {
   cancelSuccessFlash();
-  const start = () => {
-    cancelSuccessFlash();
-    completedPendingFocus = false;
-    safeStatus(api, ctx, "success");
-    successTimer = setTimeout(() => {
-      successTimer = null;
-      if (!processing) safeStatus(api, ctx, queue.some((i) => i.status === "error") ? "error" : "idle");
-    }, SUCCESS_FLASH_MS);
-  };
-  if (document.hasFocus()) {
-    start();
-  } else {
-    focusListener = start;
-    window.addEventListener("focus", focusListener, { once: true });
-  }
+  completedPendingFocus = false;
+  successHeld = true;
+  safeStatus(api, ctx, "success");
+  focusListener = syncSuccessFlash;
+  window.addEventListener("focus", focusListener);
+  window.addEventListener("blur", focusListener);
+  syncSuccessFlash();
 }
 
 // --- queue processing loop -------------------------------------------
@@ -453,8 +474,10 @@ export function Component({ api }: { api: PluginApi }) {
       setFolder(outputDirectory);
     };
     listeners.add(rerender);
+    setPaneMounted(true);
     return () => {
       listeners.delete(rerender);
+      setPaneMounted(false);
     };
   }, []);
 

@@ -13,6 +13,17 @@
 - ARCHITECTURE.md is a good source to grep for details around this project this plugin will run in but shouldnt be necessary to load into context
 - build-release.bat is intended as a local development tool to quickly move the plugin over to the folder where I run stewrd so the plugin may be tested by me in the app. Claude should run it directly after every code change, not hand it back to Topher.
 
+## Sidebar Icon Color Rules
+Every plugin shows a status dot, driven by `api.statusIcon.set`. Follow these rules for every plugin in this project:
+- Idle: `status.idle`.
+- Doing something (saving, processing, etc.): `status.in-progress`.
+- Action completed successfully: `status.success`, held until the app AND the plugin's pane have focus, then reverts 3 seconds later. If the user is in another app or another plugin, it stays `status.success` until they return, then changes 3 seconds later.
+- Non-breaking issue that needs no user action: `status.warning`.
+- Breaking error: `status.error`.
+- With multiple dots, the sidebar icon uses the highest priority color: error > warning > in-progress > success > idle.
+- When the dot is `status.idle`, the sidebar icon uses the default color instead of `status.idle` (host behavior, not controlled by the plugin).
+- In this plugin the logic lives in `index.tsx` (`safeStatus`, `showSuccessThenIdle`, `syncSuccessFlash`, `setPaneMounted`).
+
 # Building a Stewrd plugin
 
 This file ships inside every Stewrd install's `plugins/` folder so an AI coding

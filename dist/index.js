@@ -488,12 +488,13 @@ async function ensureBinariesInstalled(api, ctx, myId, paths) {
     return true;
   } catch (err) {
     safeLog(api, ctx, "error", `Install failed: ${err}`);
-    safeStatus(api, ctx, "error");
+    const ytReady = await isYtDlpInstalled(api);
+    safeStatus(api, ctx, ytReady ? "warning" : "error");
     setBanner({
       tone: "warning",
       message: "FFmpeg install failed - downloads will use single-file formats without thumbnail/metadata embedding."
     });
-    return await isYtDlpInstalled(api);
+    return ytReady;
   } finally {
     installing = false;
     notify();
@@ -512,33 +513,49 @@ async function checkForUpdates(api, ctx, myId, paths) {
     safeLog(api, ctx, "warn", `Update check failed: ${err}`);
   }
 }
-var SUCCESS_FLASH_MS = 5e3;
+var SUCCESS_FLASH_MS = 3e3;
 var completedPendingFocus = false;
+var successHeld = false;
+var paneMounted = false;
 var successTimer = null;
 var focusListener = null;
-function cancelSuccessFlash() {
+function clearSuccessTimer() {
   if (successTimer) clearTimeout(successTimer);
   successTimer = null;
-  if (focusListener) window.removeEventListener("focus", focusListener);
+}
+function cancelSuccessFlash() {
+  clearSuccessTimer();
+  successHeld = false;
+  if (focusListener) {
+    window.removeEventListener("focus", focusListener);
+    window.removeEventListener("blur", focusListener);
+  }
   focusListener = null;
+}
+function syncSuccessFlash() {
+  if (!successHeld || !hostApi || !hostCtx) return;
+  if (!(paneMounted && document.hasFocus())) return clearSuccessTimer();
+  if (successTimer) return;
+  const api = hostApi;
+  const ctx = hostCtx;
+  successTimer = setTimeout(() => {
+    cancelSuccessFlash();
+    if (!processing) safeStatus(api, ctx, queue.some((i) => i.status === "error") ? "error" : "idle");
+  }, SUCCESS_FLASH_MS);
+}
+function setPaneMounted(mounted) {
+  paneMounted = mounted;
+  syncSuccessFlash();
 }
 function showSuccessThenIdle(api, ctx) {
   cancelSuccessFlash();
-  const start = () => {
-    cancelSuccessFlash();
-    completedPendingFocus = false;
-    safeStatus(api, ctx, "success");
-    successTimer = setTimeout(() => {
-      successTimer = null;
-      if (!processing) safeStatus(api, ctx, queue.some((i) => i.status === "error") ? "error" : "idle");
-    }, SUCCESS_FLASH_MS);
-  };
-  if (document.hasFocus()) {
-    start();
-  } else {
-    focusListener = start;
-    window.addEventListener("focus", focusListener, { once: true });
-  }
+  completedPendingFocus = false;
+  successHeld = true;
+  safeStatus(api, ctx, "success");
+  focusListener = syncSuccessFlash;
+  window.addEventListener("focus", focusListener);
+  window.addEventListener("blur", focusListener);
+  syncSuccessFlash();
 }
 async function runProcessingLoop(api, ctx, myId, paths) {
   if (processing || !isOwner(myId)) return;
@@ -686,8 +703,10 @@ function Component({ api }) {
       setFolder(outputDirectory);
     };
     listeners.add(rerender);
+    setPaneMounted(true);
     return () => {
       listeners.delete(rerender);
+      setPaneMounted(false);
     };
   }, []);
   useEffect(() => api.theme.subscribe(setPalette), [api]);
